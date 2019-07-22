@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class MixinNetHandlerLoginServer {
 
     @Shadow private int connectionTimer;
-
+    //This is needed because otherwise the server would tick so fast that even if u took 1 sec to normally join it would still kick you :P
     @Inject(method = "update", at = @At("HEAD"), cancellable = true)
     public void vanilla$update(CallbackInfo ci) {
         this.connectionTimer--;
