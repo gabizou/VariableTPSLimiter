@@ -1,146 +1,79 @@
 package pink.shpeediskey.mixin;
 
-import net.minecraft.crash.CrashReport;
-import net.minecraft.network.ServerStatusResponse;
 import net.minecraft.profiler.Profiler;
-import net.minecraft.server.management.PlayerList;
-import net.minecraft.util.ReportedException;
+import net.minecraft.profiler.Snooper;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.util.text.TextComponentString;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.spongepowered.asm.mixin.Final;
+import net.minecraft.world.WorldServer;
+import org.spongepowered.asm.lib.Opcodes;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Overwrite;
-import org.spongepowered.asm.mixin.Shadow;
-
-import java.io.File;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Constant;
+import org.spongepowered.asm.mixin.injection.ModifyConstant;
+import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.Slice;
 import static net.minecraft.server.MinecraftServer.getCurrentTimeMillis;
 
 @Mixin(value = MinecraftServer.class, priority = 500)
 public abstract class MixinMinecraftServer {
-    @Shadow public abstract boolean init();
-    @Shadow @Final private final ServerStatusResponse statusResponse = new ServerStatusResponse();
-    @Shadow public abstract void applyServerIconToResponse(ServerStatusResponse statusResponse2);
-    @Shadow private String motd;
-    @Shadow private boolean serverRunning = true;
-    @Shadow protected abstract void finalTick(CrashReport crashReport);
-    @Shadow public abstract CrashReport addServerInfoToCrashReport(CrashReport crashReport);
-    @Shadow public abstract File getDataDirectory();
-    @Shadow private boolean serverStopped;
-    @Shadow public abstract void systemExitNow();
-    @Shadow protected abstract void stopServer();
-    @Shadow private boolean serverIsRunning;
 
-    private static final Logger LOGGER = LogManager.getLogger();
-
-    /**
-     * @author Me / Mogang?
-     * @reason Uuuhhhhh Cuz I need it
-     */
-    @Overwrite
-    public void run()
-    {
-        try
-        {
-            if (this.init())
-            {
-                long currentTime = getCurrentTimeMillis();
-                long i = 0L;
-                this.statusResponse.setServerDescription(new TextComponentString(this.motd));
-                this.statusResponse.setVersion(new ServerStatusResponse.Version("1.12.2", 340));
-                this.applyServerIconToResponse(this.statusResponse);
-
-                while (this.serverRunning)
-                {
-                    long k = getCurrentTimeMillis();
-                    long j = k - currentTime;
-                    i += j;
-                    currentTime = k;
-                    this.tick();
-                    this.serverIsRunning = true;
-                }
-            }
-            else
-            {
-                this.finalTick((CrashReport)null);
-            }
-        }
-        catch (Throwable throwable1)
-        {
-            LOGGER.error("Encountered an unexpected exception", throwable1);
-            CrashReport crashreport = null;
-
-            if (throwable1 instanceof ReportedException)
-            {
-                crashreport = this.addServerInfoToCrashReport(((ReportedException)throwable1).getCrashReport());
-            }
-            else
-            {
-                crashreport = this.addServerInfoToCrashReport(new CrashReport("Exception in server tick loop", throwable1));
-            }
-
-            File file1 = new File(new File(this.getDataDirectory(), "crash-reports"), "crash-" + (new SimpleDateFormat("yyyy-MM-dd_HH.mm.ss")).format(new Date()) + "-server.txt");
-
-            if (crashreport.saveToFile(file1))
-            {
-                LOGGER.error("This crash report has been saved to: {}", (Object)file1.getAbsolutePath());
-            }
-            else
-            {
-                LOGGER.error("We were unable to save this crash report to disk.");
-            }
-
-            this.finalTick(crashreport);
-        }
-        finally
-        {
-            try
-            {
-                this.serverStopped = true;
-                this.stopServer();
-            }
-            catch (Throwable throwable)
-            {
-                LOGGER.error("Exception stopping the server", throwable);
-            }
-            finally
-            {
-                this.systemExitNow();
-            }
-        }
+    @ModifyConstant(method = "run", constant = @Constant(longValue = 2000L))
+    private long tickDelimiter$provideLongMaxToIgnoreLogger(final long incomingConstant) {
+        return Long.MAX_VALUE;
     }
 
+    @ModifyConstant(
+        method = "run",
+        constant = @Constant(longValue = 0L),
+        slice = @Slice(
+            from = @At(
+                value = "FIELD",
+                target = "Lnet/minecraft/server/MinecraftServer;timeOfLastWarning:J",
+                opcode = Opcodes.PUTFIELD
+            ),
+            to = @At(value = "INVOKE", target = "Lnet/minecraft/world/WorldServer;areAllPlayersAsleep()Z")
+        )
+    )
+    private long tickDelimiter$ignoreTimeRunningBackwardsCheck(final long zeroLong) {
+        return Long.MIN_VALUE;
+    }
 
-    @Shadow private int tickCounter;
-    @Shadow public final Profiler profiler = new Profiler();
-    @Shadow public abstract void updateTimeLightAndEntities();
-    @Shadow public final long[] tickTimeArray = new long[100];
-    @Shadow private PlayerList playerList;
-    @Shadow protected abstract void saveAllWorlds(boolean isSilent);
+    @Redirect(method = "run", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/WorldServer;areAllPlayersAsleep()Z"))
+    private boolean tickDelimiter$ignorePlayerSleeping(final WorldServer worldServer) {
+        return true; // We always return true to cause a tick to be called
+    }
 
-    @Shadow private int serverPort;
+    @Redirect(method = "run", at = @At(value = "INVOKE", target = "Ljava/lang/Thread;sleep(J)V"))
+    private void tickDelimiter$doNotThreadSleep(final long value) {
+        // Do nothing, we've redirected the sleeping call
+    }
 
-    /**
-     * @author Me / Mogang?
-     * @reason Uuuhhhhh Cuz I need it
-     */
-    @Overwrite
-    protected void tick()
-    {
-        long i = System.nanoTime();
-        ++this.tickCounter;
-        this.updateTimeLightAndEntities();
-        if (this.tickCounter % 900 == 0)
-        {
-            this.playerList.saveAllPlayerData();
-            this.saveAllWorlds(true);
-            System.out.println("saved the world");
-        }
-        this.tickTimeArray[this.tickCounter % 100] = System.nanoTime() - i;
+    @Redirect(method = "tick", at = @At(value = "FIELD", target = "Lnet/minecraft/server/MinecraftServer;startProfiling:Z"))
+    private boolean tickDelimiter$ignoreProfiling(final MinecraftServer self) {
+        return false; // Always false for profiling
+    }
 
+    @Redirect(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/profiler/Profiler;startSection(Ljava/lang/String;)V"))
+    private void tickDelimiter$ignoreProfilingStart(final Profiler profiler, final String name) {
+        // do nothing
+    }
+
+    @ModifyConstant(method = "tick", constant = @Constant(longValue = 5000000000L))
+    private long tickDelimiter$lowerValueToIgnoreServerResponse() {
+        return Long.MAX_VALUE; // prevents the if statement to send a server response
+    }
+
+    @Redirect(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/profiler/Profiler;endSection()V"))
+    private void tickDelimiter$ignoreEndSection(final Profiler profiler) {
+        // do nothing
+    }
+
+    @Redirect(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/profiler/Snooper;isSnooperRunning()Z"))
+    private boolean tickDelimiter$ignoreSnooperAsWell(final Snooper snooper) {
+        return true;
+    }
+
+    @Redirect(method = "tick", at = @At(value = "INVOKE", target = "Lnet/minecraft/profiler/Snooper;addMemoryStatsToSnooper()V"))
+    private void tickDelimiter$ignoreMemorySnooper(final Snooper snooper) {
+        // do nothing
     }
 }
