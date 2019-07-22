@@ -1,0 +1,16 @@
+
+{
+  "required": true,
+  "minVersion": "0.5.7",
+  "package": "pink.shpeediskey.mixin",
+  "refmap": "mixins.shpeediskey.refmap.json",
+  "target": "@env(DEFAULT)",
+  "compatibilityLevel": "JAVA_8",
+  "mixins": [
+    "MixinMinecraftServer",
+    "MixinNetHandlerLoginServer"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
